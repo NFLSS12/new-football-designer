@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🏈 Football Play Designer - 作戦制作＆シミュレーター</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top App Header -->
+  <header class="app-header">
+    <div class="brand-title">
+      <span>🏈 Football Play Designer</span>
+      <span class="brand-badge">PRO v1.0</span>
+    </div>
+
+    <!-- Play Name & Systematic Save -->
+    <div style="display: flex; align-items: center; gap: 8px; flex: 1; max-width: 450px;">
+      <input type="text" id="playNameInput" class="input-control" style="margin-bottom:0;" placeholder="プレー名 (例: Shotgun Spread - Quick Slant)">
+      <button class="btn-primary" onclick="openSavePlayModal(state.mode === 'defense' ? 'defense' : 'offense')">💾 プレー保存</button>
+    </div>
+
+    <!-- Navigation to Playbook Browser -->
+    <div style="display: flex; gap: 8px;">
+      <button class="btn-secondary" onclick="openPlaybookBrowser(state.mode === 'defense' ? 'defense' : 'offense')" style="display:flex; align-items:center; gap:6px; background:#1e293b; color:#38bdf8; border-color:#38bdf8; font-weight:700;">
+        <span>📖</span> Playbook (体系から選ぶ)
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Work Area -->
+  <div class="app-container">
+    
+    <!-- Left Sidebar: Modes, Presets & Properties -->
+    <aside class="sidebar-panel">
+      <!-- Mode Tabs -->
+      <div class="panel-section">
+        <span class="section-title">編集モード切り替え</span>
+        <div class="mode-tabs">
+          <button class="mode-tab-btn offense" data-mode="offense">🔵 オフェンス</button>
+          <button class="mode-tab-btn defense" data-mode="defense">🔴 ディフェンス</button>
+          <button class="mode-tab-btn active matchup" data-mode="matchup">⚔️ マッチアップ</button>
+        </div>
+      </div>
+
+      <!-- Play Type (Pass vs Run) Toggle & Sequence -->
+      <div class="panel-section">
+        <span class="section-title">オフェンス・プレー種別</span>
+        <div class="play-type-toggle">
+          <button id="btnTypePass" class="play-type-btn active pass">🏈 パスプレイ</button>
+          <button id="btnTypeRun" class="play-type-btn">🏃 ランプレイ</button>
+        </div>
+
+        <!-- Pass Play Options -->
+        <div id="passOptionsContainer" style="margin-top:10px;">
+          <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px;">
+            <b>🎯 パス投球ベクトル (直線矢印):</b><br>
+            QBから伸びる直線の矢印の先が着地点です。先端マーカーをドラッグするか、下のボタンで直線を引けます。
+          </div>
+          <button id="btnDrawPassLine" class="btn-secondary" style="width:100%; font-size:0.75rem; margin-bottom:10px;" onclick="startPassVectorDrawing()">
+            <span>✏️ QBからパス直線を引く</span>
+          </button>
+
+          <!-- Throw Timing Controller -->
+          <div style="background:var(--bg-main); border:1px solid var(--border-color); border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:0.75rem; font-weight:bold; color:#fbbf24;">⏱ 投球タイミング:</span>
+              <span id="throwTimingLabel" style="font-size:0.75rem; color:#38bdf8; font-weight:bold;">2.0s 後</span>
+            </div>
+            <input type="range" id="throwTimingSlider" class="seeker-slider" min="0.8" max="4.0" step="0.1" value="2.0" oninput="setThrowTiming(parseFloat(this.value))">
+            <div style="display:flex; gap:4px;">
+              <button class="btn-secondary" style="flex:1; font-size:0.7rem; padding:3px;" onclick="setThrowTiming(1.2)">⚡ クイック (1.2s)</button>
+              <button class="btn-secondary" style="flex:1; font-size:0.7rem; padding:3px;" onclick="setThrowTiming(2.0)">🎯 標準 (2.0s)</button>
+              <button class="btn-secondary" style="flex:1; font-size:0.7rem; padding:3px;" onclick="setThrowTiming(3.2)">🚀 ロング (3.2s)</button>
+            </div>
+          </div>
+          <div style="margin-top:8px; padding:6px 8px; background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.25); border-radius:6px;">
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.75rem; font-weight:700; color:#38bdf8;">
+              <input type="checkbox" id="chkSmartPass" checked onchange="state.aiSmartLead = this.checked; syncAiToggles(); renderAll();">
+              <span>🎯 QBスマートリード (空いた選手へ自動投球)</span>
+            </label>
+            <div style="font-size:0.68rem; color:var(--text-muted); margin-top:2px;">ディフェンスのカバーを読み、一番フリーなレシーバーへ自動でパスを放ちます。</div>
+          </div>
+        </div>
+
+        <!-- Run Play Sequence Options -->
+        <div id="runOptionsContainer" style="display:none; margin-top:10px;">
+          <!-- Throw Timing Controller for Run / RPO / Trick Pass -->
+          <div style="background:var(--bg-main); border:1px solid var(--border-color); border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:0.75rem; font-weight:bold; color:#fbbf24;">⏱ 投球タイミング (RPO・パス展開):</span>
+              <span id="runThrowTimingLabel" style="font-size:0.75rem; color:#38bdf8; font-weight:bold;">2.0s 後</span>
+            </div>
+            <input type="range" id="runThrowTimingSlider" class="seeker-slider" min="0.8" max="4.0" step="0.1" value="2.0" oninput="setThrowTiming(parseFloat(this.value))">
+            <div style="display:flex; gap:4px;">
+              <button class="btn-secondary" style="flex:1; font-size:0.7rem; padding:3px;" onclick="setThrowTiming(1.2)">⚡ クイック (1.2s)</button>
+              <button class="btn-secondary" style="flex:1; font-size:0.7rem; padding:3px;" onclick="setThrowTiming(2.0)">🎯 標準 (2.0s)</button>
+              <button class="btn-secondary" style="flex:1; font-size:0.7rem; padding:3px;" onclick="setThrowTiming(3.2)">🚀 ロング (3.2s)</button>
+            </div>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="font-size:0.75rem; font-weight:bold; color:#34d399;">🏃 ボール受け渡し設定:</span>
+            <span style="font-size:0.7rem; color:var(--text-muted);">(最大4人)</span>
+          </div>
+
+          <div id="runSequenceList" class="run-seq-container">
+            <!-- Dynamically populated by JS -->
+          </div>
+
+          <button id="btnAddRunSeq" class="run-seq-add-btn" style="width:100%; margin-top:6px;" onclick="addRunSequenceStep()">
+            <span>＋</span> 次の受け渡しを追加
+          </button>
+          
+          <div style="font-size:0.7rem; color:#f87171; margin-top:6px; line-height:1.4;">
+            ※<b>ハンドオフ</b>は2人のルートが交差必須（交差しないと開始不可）。<b>トス</b>は一定距離内（14yd以内）が必要です。
+          </div>
+
+          <div style="margin-top:8px; padding:6px 8px; background:rgba(52,211,153,0.08); border:1px solid rgba(52,211,153,0.25); border-radius:6px;">
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:0.75rem; font-weight:700; color:#34d399;">
+              <input type="checkbox" id="chkSmartRun" checked onchange="state.aiSmartCutback = this.checked; syncAiToggles(); renderAll();">
+              <span>🏃 RBスマートカットバック (空いた穴へ自動進路変更)</span>
+            </label>
+            <div style="font-size:0.68rem; color:var(--text-muted); margin-top:2px;">タックラーを避け、ブロッカーの隙間（オープンレーン）を見極めて自律カットします。</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pre-Snap Motion & Shift Section -->
+      <div class="panel-section" id="presnapSection">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span class="section-title" style="margin-bottom:0;">⏱ スナップ前動作</span>
+          <span id="presnapCountBadge" style="font-size:0.7rem; color:var(--text-muted); background:var(--bg-main); padding:2px 6px; border-radius:10px;">0設定</span>
+        </div>
+        
+        <!-- Shifts list -->
+        <div style="margin-top:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="font-size:0.72rem; font-weight:bold; color:#c084fc;">🔄 シフト (順番に移動):</span>
+          </div>
+          <div id="shiftListContainer" style="display:flex; flex-direction:column; gap:4px;">
+            <div style="font-size:0.7rem; color:var(--text-muted); font-style:italic;">なし (選手クリックで指定)</div>
+          </div>
+        </div>
+
+        <!-- Motion -->
+        <div style="margin-top:10px; border-top:1px solid var(--border-color); padding-top:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="font-size:0.72rem; font-weight:bold; color:#38bdf8;">🏃 モーション (直前移動):</span>
+          </div>
+          <div id="motionContainer">
+            <div style="font-size:0.7rem; color:var(--text-muted); font-style:italic;">なし (選手クリックで指定)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Presets Selector Section -->
+      <div class="panel-section">
+        <span class="section-title">フォーメーション・プリセット</span>
+        
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <label class="input-label" style="margin-bottom:0;">🔵 オフェンス隊形:</label>
+          <button id="btnDeleteCustomOffFormation" style="display:none; background:none; border:none; color:#f87171; font-size:0.7rem; cursor:pointer; padding:0 2px;" onclick="deleteSelectedCustomFormation('offense')">🗑 この隊形を削除</button>
+        </div>
+        <select id="offensePresetSelect" class="select-control" onchange="loadOffensePreset(this.value)">
+          <!-- Populated by JS -->
+        </select>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+          <label class="input-label" style="margin-bottom:0;">🔴 ディフェンス隊形・カバー:</label>
+          <button id="btnDeleteCustomDefFormation" style="display:none; background:none; border:none; color:#f87171; font-size:0.7rem; cursor:pointer; padding:0 2px;" onclick="deleteSelectedCustomFormation('defense')">🗑 この隊形を削除</button>
+        </div>
+        <select id="defensePresetSelect" class="select-control" onchange="loadDefensePreset(this.value)">
+          <!-- Populated by JS -->
+        </select>
+
+        <div style="display:flex; gap:6px; margin-top:6px;">
+          <button class="btn-primary" style="flex:1; font-size:0.75rem; background:#3b82f6; border-color:#2563eb;" onclick="openSaveFormationModal('offense')">
+            <span>💾 OFF隊形保存</span>
+          </button>
+          <button class="btn-primary" style="flex:1; font-size:0.75rem; background:#ef4444; border-color:#dc2626;" onclick="openSaveFormationModal('defense')">
+            <span>💾 DEF隊形保存</span>
+          </button>
+        </div>
+        <div style="display:flex; gap:6px; margin-top:4px;">
+          <button class="btn-secondary" style="flex:1; font-size:0.72rem;" onclick="openSavePlayModal('offense')">🔵 OFFプレー保存</button>
+          <button class="btn-secondary" style="flex:1; font-size:0.72rem;" onclick="openSavePlayModal('defense')">🔴 DEFプレー保存</button>
+        </div>
+      </div>
+
+      <!-- Quick Instructions & Guide -->
+      <div class="panel-section" style="flex:1;">
+        <span class="section-title">直感操作ガイド</span>
+        <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.6; display:flex; flex-direction:column; gap:8px;">
+          <div><b style="color:#60a5fa">● 選手をクリック:</b><br>その場でポップアップが開き、既存ルート選択・自由記述・ブロック・ゾーン・マンマークをすぐ選べます。</div>
+          <div><b style="color:#fbbf24">● 選手をドラッグ:</b><br>初期配置やアライメントをミリ単位で自由に調整できます。</div>
+          <div><b style="color:#34d399">● 黄色い丸（経由点）をドラッグ:</b><br>パスルートの曲がり角やカット位置を自由に変形できます。</div>
+          <div><b style="color:#f87171">● ディフェンスの反応:</b><br>マンカバーはマーク相手に追従、ゾーンは担当エリアへ下がり、ボール移動後は全員がボールへチェイスします！</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Center Canvas Area -->
+    <main class="canvas-area">
+      <!-- View Options Bar -->
+      <div style="background-color: var(--bg-panel); border-bottom: 1px solid var(--border-color); padding: 8px 16px; display:flex; justify-content:space-between; align-items:center; font-size:0.75rem;">
+        <div style="display:flex; gap:14px; color:var(--text-muted);">
+          <span>💡 選手をドラッグして位置を調整できます</span>
+          <span>💡 選手をクリックするとルートやカバーを変更できます</span>
+        </div>
+        <div style="display:flex; gap:12px; align-items:center;">
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer; background:rgba(56, 189, 248, 0.12); padding:3px 9px; border-radius:12px; border:1px solid rgba(56, 189, 248, 0.4); color:#38bdf8; font-weight:700;">
+            <input type="checkbox" id="chkAiSmartMode" checked onchange="toggleAiSmartMode(this.checked)">
+            <span>🧠 AI自動判断 (QBリード / RBカットバック)</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" id="chkRoutes" checked onchange="state.showRoutes = this.checked; renderAll();">
+            <span>ルート表示</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" id="chkCov" checked onchange="state.showCoverage = this.checked; renderAll();">
+            <span>マンカバー線</span>
+          </label>
+          <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <input type="checkbox" id="chkZones" checked onchange="state.showZoneCircles = this.checked; renderAll();">
+            <span>ゾーンサークル</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Field Viewport -->
+      <div class="field-viewport">
+        <div class="field-canvas-container" id="fieldContainer">
+          <!-- Background Markings (Yard lines, hashes, LOS, 1st down) -->
+          <svg class="field-svg" id="fieldSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+          
+          <!-- Players & Interactive Elements Layer -->
+          <div id="playersContainer" style="position:absolute; inset:0; pointer-events:auto;"></div>
+        </div>
+      </div>
+
+      <!-- Bottom Playback Controls Bar -->
+      <div class="playback-bar">
+        <div class="playback-controls">
+          <button id="btnPlay" class="play-btn" onclick="togglePlay()">
+            <span>▶</span> スナップ！（再生）
+          </button>
+          <button class="icon-btn" onclick="resetPlay()">⏮ 戻す</button>
+        </div>
+
+        <!-- Seeker Slider -->
+        <div class="seeker-container">
+          <span style="font-size:0.75rem; color:var(--text-muted);">タイムライン:</span>
+          <input type="range" id="seekerSlider" class="seeker-slider" min="0" max="100" value="0">
+          <span class="time-label" id="timeLabel">0.0s / 3.5s</span>
+        </div>
+
+        <!-- Duration Selection -->
+        <div style="display:flex; align-items:center; gap:6px; font-size:0.75rem; color:var(--text-muted);">
+          <span>⏱ 時間:</span>
+          <select id="playDurationSelect" class="select-control" style="margin-bottom:0; padding:3px 6px; font-size:0.75rem; width:auto;" onchange="setPlayDuration(parseFloat(this.value))">
+            <option value="3.5">3.5 秒</option>
+            <option value="5.0" selected>5.0 秒 (推奨)</option>
+            <option value="6.5">6.5 秒</option>
+            <option value="8.0">8.0 秒</option>
+            <option value="10.0">10.0 秒</option>
+          </select>
+        </div>
+
+        <!-- Speed Selection -->
+        <div style="display:flex; align-items:center; gap:6px; font-size:0.75rem; color:var(--text-muted);">
+          <span>速度:</span>
+          <button class="icon-btn spd-btn" id="spd_05">0.5x</button>
+          <button class="icon-btn spd-btn" id="spd_10" style="border-color:var(--primary); color:var(--primary);">1.0x</button>
+          <button class="icon-btn spd-btn" id="spd_15">1.5x</button>
+        </div>
+      </div>
+    </main>
+
+  </div>
+
+  <!-- Alert Modal Dialog -->
+  <div id="alertModal" class="alert-modal-backdrop" style="display:none;">
+    <div class="alert-modal-box">
+      <div class="alert-modal-icon">⚠️</div>
+      <div id="alertModalTitle" class="alert-modal-title">受け渡しエラー</div>
+      <div id="alertModalMsg" class="alert-modal-msg"></div>
+      <button class="alert-modal-btn" onclick="closeAlertModal()">了解・修正する</button>
+    </div>
+  </div>
+
+  <!-- Formation 2-Stage Save Modal Dialog -->
+  <div id="formationModal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:8px; margin-bottom:12px;">
+        <span id="formationModalTitle" style="font-weight:800; font-size:0.95rem; color:#f8fafc;">📐 フォーメーション新規登録</span>
+        <button onclick="closeSaveFormationModal()" style="background:none; border:none; color:var(--text-muted); font-size:1.2rem; cursor:pointer;">×</button>
+      </div>
+
+      <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:12px;">
+        現在の11人の配置座標（フォーメーション）を2段階の名前（親カテゴリ ＋ バリエーション）で登録します。
+      </p>
+
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <!-- Step 1: Base Formation Category -->
+        <div>
+          <label style="font-size:0.75rem; font-weight:bold; color:#93c5fd; display:block; margin-bottom:4px;">
+            ① 親フォーメーション (カテゴリ):
+          </label>
+          <select id="modalFormCategorySelect" class="select-control" onchange="onModalCategoryChange(this.value)">
+            <!-- Options dynamically populated by JS based on side -->
+          </select>
+          <input id="modalFormCategoryCustomInput" type="text" class="select-control" placeholder="新しいカテゴリ名を入力 (例: Pistol, Wishbone)" style="margin-top:4px; display:none;">
+        </div>
+
+        <!-- Step 2: Variation Name -->
+        <div>
+          <label style="font-size:0.75rem; font-weight:bold; color:#38bdf8; display:block; margin-bottom:4px;">
+            ② バリエーション名 (記述):
+          </label>
+          <input id="modalFormVariationInput" type="text" class="select-control" placeholder="例: offset i, tight, trips right, 2te ace">
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+        <button class="btn-secondary" onclick="closeSaveFormationModal()">キャンセル</button>
+        <button class="btn-primary" onclick="confirmSaveFormation()">💾 この隊形を保存する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Systematic Play Save Modal Dialog -->
+  <div id="savePlayModal" class="modal-overlay" style="display:none;">
+    <div class="modal-content" style="max-width:540px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:8px; margin-bottom:12px;">
+        <span id="savePlayModalTitle" style="font-weight:800; font-size:1.0rem; color:#f8fafc;">💾 プレーをプレーブックに登録・保存</span>
+        <button onclick="closeSavePlayModal()" style="background:none; border:none; color:var(--text-muted); font-size:1.3rem; cursor:pointer;">×</button>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <!-- Play Name -->
+        <div>
+          <label style="font-size:0.75rem; font-weight:bold; color:#f8fafc; display:block; margin-bottom:4px;">
+            プレー名: <span style="color:#ef4444;">*</span>
+          </label>
+          <input id="saveModalPlayNameInput" type="text" class="select-control" placeholder="例: Inside Zone Lead, Quick Slant, Cover 2 Tampa">
+        </div>
+
+        <!-- 1. Formation (2-stage) -->
+        <div style="background:var(--bg-main); border:1px solid var(--border-color); border-radius:6px; padding:10px;">
+          <div style="font-size:0.78rem; font-weight:bold; color:#93c5fd; margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+            <span>📐</span> ① フォーメーション
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+            <div>
+              <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:2px;">親フォーメーション:</label>
+              <select id="saveModalFormCatSelect" class="select-control" onchange="onSaveModalFormCatChange(this.value)">
+                <!-- Populated dynamically -->
+              </select>
+              <input id="saveModalFormCatCustom" type="text" class="select-control" placeholder="新規親カテゴリ名" style="display:none; margin-top:4px;">
+            </div>
+            <div>
+              <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:2px;">サブ隊形 (詳しい隊形名):</label>
+              <select id="saveModalFormVarSelect" class="select-control" onchange="onSaveModalFormVarChange(this.value)">
+                <!-- Populated dynamically based on parent category -->
+              </select>
+              <input id="saveModalFormVarCustom" type="text" class="select-control" placeholder="新規サブ隊形名を入力 (自由記述)" style="display:none; margin-top:4px;" oninput="onCustomVariationInput(this.value)">
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Play Style (2-stage) -->
+        <div style="background:var(--bg-main); border:1px solid var(--border-color); border-radius:6px; padding:10px;">
+          <div style="font-size:0.78rem; font-weight:bold; color:#f59e0b; margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+            <span>⚡</span> ② プレースタイル
+          </div>
+          <div style="display:flex; gap:6px; margin-bottom:8px;" id="saveModalStyleCatContainer">
+            <!-- Populated dynamically (Pills for Run/Option/Pass or Zone/Man/Blitz) -->
+          </div>
+          <div>
+            <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:2px;">詳しいスタイル種別:</label>
+            <select id="saveModalStyleSubSelect" class="select-control">
+              <!-- Sub styles populated dynamically -->
+            </select>
+          </div>
+        </div>
+
+        <!-- 3. Personnel (Auto-detected) -->
+        <div style="background:var(--bg-main); border:1px solid var(--border-color); border-radius:6px; padding:10px;">
+          <div style="font-size:0.78rem; font-weight:bold; color:#34d399; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+            <span>👥</span> ③ パーソネル構成 (自動判定)
+          </div>
+          <div id="saveModalPersonnelDisplay" style="font-size:0.75rem; color:#f8fafc; font-weight:600; padding:6px; background:#1e293b; border-radius:4px; border:1px solid #334155;">
+            <!-- e.g. "21 Personnel (2 RB, 1 TE, 2 WR)" -->
+          </div>
+        </div>
+
+        <!-- Description -->
+        <div>
+          <label style="font-size:0.7rem; color:var(--text-muted); display:block; margin-bottom:2px;">メモ・作戦の狙い (任意):</label>
+          <input id="saveModalDescInput" type="text" class="select-control" placeholder="例: DEのキーリード、FSの裏を狙う">
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+        <button class="btn-secondary" onclick="closeSavePlayModal()">キャンセル</button>
+        <button class="btn-primary" onclick="confirmSavePlay()">💾 プレーブックに登録</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Systematic Playbook Browser Modal Dialog -->
+  <div id="playbookBrowserModal" class="modal-overlay" style="display:none;">
+    <div class="modal-content playbook-browser-content">
+      <!-- Modal Header -->
+      <div class="playbook-browser-header">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span style="font-weight:800; font-size:1.1rem; color:#f8fafc;">📖 Playbook ブラウザー</span>
+          <div class="playbook-side-toggle">
+            <button id="pbSideOffenseBtn" class="pb-side-btn active" onclick="switchPlaybookBrowserSide('offense')">🔵 オフェンス</button>
+            <button id="pbSideDefenseBtn" class="pb-side-btn" onclick="switchPlaybookBrowserSide('defense')">🔴 ディフェンス</button>
+          </div>
+        </div>
+        <button onclick="closePlaybookBrowser()" style="background:none; border:none; color:var(--text-muted); font-size:1.4rem; cursor:pointer;">×</button>
+      </div>
+
+      <!-- Axis Tabs (3つの切り口) -->
+      <div class="playbook-axis-tabs">
+        <button id="pbAxisFormationBtn" class="pb-axis-btn active" onclick="switchPlaybookAxis('formation')">
+          <span>📐</span> フォーメーションから選ぶ
+        </button>
+        <button id="pbAxisStyleBtn" class="pb-axis-btn" onclick="switchPlaybookAxis('style')">
+          <span>⚡</span> プレースタイルから選ぶ
+        </button>
+        <button id="pbAxisPersonnelBtn" class="pb-axis-btn" onclick="switchPlaybookAxis('personnel')">
+          <span>👥</span> パーソネルから選ぶ
+        </button>
+      </div>
+
+      <!-- Breadcrumbs Navigation -->
+      <div id="pbBreadcrumbs" class="pb-breadcrumbs">
+        <!-- e.g. "オフェンス > フォーメーション > I-Formation" -->
+      </div>
+
+      <!-- Dynamic Browser Explorer Container -->
+      <div class="playbook-browser-body" id="playbookBrowserBody">
+        <!-- Populated dynamically: Level 1 Categories -> Level 2 Sub-categories -> Plays Grid -->
+      </div>
+    </div>
+  </div>
+
+  <script src="presets.js"></script>
+  <script src="designer.js"></script>
+</body>
+</html>
