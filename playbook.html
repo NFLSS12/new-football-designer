@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📖 Playbook - プレーブック一覧カタログ</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .tab-nav {
+      display: flex;
+      gap: 10px;
+      padding: 16px 20px 0;
+      border-bottom: 1px solid var(--border-color);
+      background-color: var(--bg-panel);
+    }
+    .tab-nav-btn {
+      padding: 10px 20px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      transition: all 0.15s;
+    }
+    .tab-nav-btn.active {
+      color: #ffffff;
+      border-bottom-color: var(--primary);
+    }
+    .tab-nav-btn.active.def {
+      border-bottom-color: var(--accent-red);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top App Header -->
+  <header class="app-header">
+    <div class="brand-title">
+      <span>📖 Football Playbook</span>
+      <span class="brand-badge">LIBRARY</span>
+    </div>
+
+    <div style="display: flex; gap: 10px; align-items:center;">
+      <button class="btn-secondary" onclick="exportPlaybookJson()">📤 JSON書き出し</button>
+      <button class="btn-secondary" onclick="document.getElementById('importFileInput').click()">📥 JSON読み込み</button>
+      <input type="file" id="importFileInput" style="display:none" accept=".json" onchange="importPlaybookJson(event)">
+      <a href="index.html" class="btn-primary" style="text-decoration:none; display:flex; align-items:center; gap:6px;">
+        <span>＋</span> 新規プレー作成
+      </a>
+    </div>
+  </header>
+
+  <!-- Tabs Navigation -->
+  <div class="tab-nav">
+    <button class="tab-nav-btn active" id="tabOffense" onclick="switchTab('offense')">🔵 オフェンス プレーブック (<span id="offenseCount">0</span>)</button>
+    <button class="tab-nav-btn" id="tabDefense" onclick="switchTab('defense')">🔴 ディフェンス プレーブック (<span id="defenseCount">0</span>)</button>
+  </div>
+
+  <!-- Cards Grid Container -->
+  <main style="flex:1; overflow-y:auto; background-color:var(--bg-main);">
+    <div class="playbook-grid" id="playbookGrid">
+      <!-- Populated by JS -->
+    </div>
+  </main>
+
+  <script src="presets.js"></script>
+  <script>
+    const STORAGE_KEY = 'football_play_designer_playbook_v1';
+    let currentTab = 'offense';
+
+    function getStorageData() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : { offense: [], defense: [] };
+      } catch (e) {
+        return { offense: [], defense: [] };
+      }
+    }
+
+    function saveStorageData(data) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.getElementById('tabOffense').className = `tab-nav-btn ${tab === 'offense' ? 'active' : ''}`;
+      document.getElementById('tabDefense').className = `tab-nav-btn ${tab === 'defense' ? 'active def' : ''}`;
+      renderCards();
+    }
+
+    function renderCards() {
+      const data = getStorageData();
+      const grid = document.getElementById('playbookGrid');
+      grid.innerHTML = '';
+
+      // Count badges
+      const offTotal = Object.keys(PRESETS.offense).length + (data.offense || []).length;
+      const defTotal = Object.keys(PRESETS.defense).length + (data.defense || []).length;
+      document.getElementById('offenseCount').innerText = offTotal;
+      document.getElementById('defenseCount').innerText = defTotal;
+
+      // Combine Built-in Presets + User Saved Plays
+      const list = [];
+
+      if (currentTab === 'offense') {
+        // Built-in presets
+        Object.values(PRESETS.offense).forEach(p => {
+          list.push({ ...p, isPreset: true });
+        });
+        // User custom
+        (data.offense || []).forEach(p => {
+          list.push({ ...p, isPreset: false });
+        });
+      } else {
+        // Built-in presets
+        Object.values(PRESETS.defense).forEach(p => {
+          list.push({ ...p, isPreset: true });
+        });
+        // User custom
+        (data.defense || []).forEach(p => {
+          list.push({ ...p, isPreset: false });
+        });
+      }
+
+      list.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'play-card';
+
+        // Miniature SVG Field Preview
+        const previewSvg = generateThumbnailSvg(item, currentTab);
+
+        const pInfo = item.personnel || (typeof detectPersonnel === 'function' ? detectPersonnel(currentTab, item.players) : { code: '11' });
+        const formLabel = `${item.formationCategory || 'General'} · ${item.formationVariation || 'Standard'}`;
+        const styleLabel = `${item.playStyleCategory || ''} ${item.playStyleSub ? '· ' + item.playStyleSub : ''}`;
+
+        card.innerHTML = `
+          <div class="play-card-preview">
+            ${previewSvg}
+          </div>
+          <div class="play-card-body">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px;">
+              <h4 class="play-card-title">${item.name}</h4>
+              <span style="font-size:0.65rem; padding:2px 6px; border-radius:4px; font-weight:700; ${item.isPreset ? 'background:#1e293b; color:#94a3b8;' : 'background:#1e3a8a; color:#93c5fd;'}">
+                ${item.isPreset ? 'プリセット' : 'カスタム'}
+              </span>
+            </div>
+            <p class="play-card-desc">${item.description || (item.savedAt ? '保存日時: ' + new Date(item.savedAt).toLocaleDateString() : 'フォーメーションと動き')}</p>
+            
+            <div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:6px;">
+              <span style="font-size:0.65rem; padding:2px 6px; border-radius:4px; background:#0f172a; border:1px solid #1e40af; color:#93c5fd;">📐 ${formLabel}</span>
+              <span style="font-size:0.65rem; padding:2px 6px; border-radius:4px; background:#0f172a; border:1px solid #854d0e; color:#fcd34d;">⚡ ${styleLabel}</span>
+              <span style="font-size:0.65rem; padding:2px 6px; border-radius:4px; background:#0f172a; border:1px solid #166534; color:#86efac;">👥 ${pInfo.code}</span>
+            </div>
+
+            <div style="margin-top:12px; display:flex; gap:6px;">
+              <button class="btn-primary" style="flex:1; padding:6px 10px; font-size:0.75rem;" onclick="loadPlayToDesigner('${currentTab}', '${item.id}', ${item.isPreset})">✏️ 制作画面で開く</button>
+              ${!item.isPreset ? `
+                <button class="btn-secondary" style="color:#f87171; padding:6px 10px; font-size:0.75rem;" onclick="deleteCustomPlay('${currentTab}', '${item.id}')">🗑 削除</button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function generateThumbnailSvg(play, type) {
+      const isOff = type === 'offense';
+      let svgContent = `
+        <svg viewBox="0 0 100 100" style="width:100%; height:100%; pointer-events:none;">
+          <!-- Hash marks & lines -->
+          <line x1="0" y1="65" x2="100" y2="65" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="3,2" />
+          <line x1="0" y1="35" x2="100" y2="35" stroke="#facc15" stroke-width="1" stroke-opacity="0.6" />
+      `;
+
+      if (isOff) {
+        // Offense routes
+        (play.players || []).forEach(p => {
+          if (p.route && p.route.length > 0) {
+            const pts = [{ x: p.x, y: p.y }, ...p.route];
+            const d = pts.map((pt, i) => `${i === 0 ? 'M' : 'L'} ${pt.x} ${pt.y}`).join(' ');
+            svgContent += `<path d="${d}" stroke="#f59e0b" stroke-width="1.4" fill="none" stroke-linecap="round" opacity="0.8" />`;
+          }
+          // Player dot
+          svgContent += `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#2563eb" stroke="#ffffff" stroke-width="0.8" />`;
+        });
+      } else {
+        // Defense zones / lines
+        (play.players || []).forEach(p => {
+          if (p.coverage === 'zone' && p.zoneX != null) {
+            svgContent += `<circle cx="${p.zoneX}" cy="${p.zoneY}" r="7" fill="rgba(59,130,246,0.2)" stroke="#3b82f6" stroke-width="0.8" stroke-dasharray="2,2" />`;
+          }
+          svgContent += `<circle cx="${p.x}" cy="${p.y}" r="3" fill="#ef4444" stroke="#ffffff" stroke-width="0.8" />`;
+        });
+      }
+
+      svgContent += `</svg>`;
+      return svgContent;
+    }
+
+    function loadPlayToDesigner(type, id, isPreset) {
+      sessionStorage.setItem('load_play_request', JSON.stringify({ type, id, isPreset }));
+      window.location.href = 'index.html';
+    }
+
+    function deleteCustomPlay(type, id) {
+      if (!confirm('⚠️ 警告: このプレーをプレーブックから削除しますか？\n\n※この操作は取り消せません。保存されたプレーデータが削除されます。')) return;
+      const data = getStorageData();
+      if (type === 'offense') {
+        data.offense = data.offense.filter(p => p.id !== id);
+      } else {
+        data.defense = data.defense.filter(p => p.id !== id);
+      }
+      saveStorageData(data);
+      renderCards();
+    }
+
+    function exportPlaybookJson() {
+      const data = getStorageData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `football_playbook_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function importPlaybookJson(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const parsed = JSON.parse(event.target.result);
+          if (!parsed.offense || !parsed.defense) throw new Error('フォーマットが正しくありません');
+          saveStorageData(parsed);
+          alert('✅ プレーブックを正常に読み込みました！');
+          renderCards();
+        } catch (err) {
+          alert('❌ 読み込みに失敗しました: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      renderCards();
+    });
+  </script>
+</body>
+</html>
